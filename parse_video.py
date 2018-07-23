@@ -78,6 +78,18 @@ def dashcamVideoParser():
                         riff['strl'] = strl
                     strl.append(pullstrl(avifile))
 
+                if b'movi' == list_type:
+                    movi = riff.get('movi')
+                    if not movi:
+                        movi = list()
+                        riff['movi'] = movi
+                    movi.append(pullmovi(avifile))
+
+            elif b'JUNK' == next_type:
+                junk_size = struct.unpack_from('I', avifile, offset)[0]
+                offset = offset + 0x04
+                print("junk: ",junk_size)
+                offset = offset + junk_size
             else:
                 print("Not here")
                 break
@@ -90,6 +102,41 @@ def dashcamVideoParser():
 def pullLIST(avifile):
     global offset
     return struct.unpack_from('I4s', avifile, offset)
+
+def pullmovi(avifile):
+    global offset
+    res = dict()
+    while True:
+        fourcc = struct.unpack_from('4s', avifile, offset)[0]
+        if b'02st' == fourcc:
+            print('02st')
+            st02 = dict()                    
+            (fcc, ssize, unk1, unk2) = struct.unpack_from('4s3I', avifile, offset)
+            offset = offset + (4*0x04)
+            gpsstr_fmt = '{}sI'.format(unk2-0x04)
+            (gpsstr, unk3) = struct.unpack_from(gpsstr_fmt, avifile, offset)
+            offset = offset + unk2
+            st02['structsize'] = ssize
+            st02['unk1'] = unk1
+            st02['unk2'] = unk2
+            st02['gps'] = gpsstr.decode()
+            st02['unk3'] = unk3
+            res['02st'] = st02
+        elif b'03st' == fourcc:
+            print('03st')
+            st03 = dict()
+            (fcc, ssize, unk1, unk2, unk3) = struct.unpack_from('4s4I', avifile, offset)
+            offset = offset + (5*0x04)
+            st03['structsize'] = ssize
+            st03['unk1'] = unk1
+            st03['unk2'] = unk2
+            st03['unk3'] = unk3
+            res['03st'] = st03
+        # elif b'00dc' == fourcc:
+        #     print ('00dc')
+        else:
+            break
+    return res
 
 def pullstrl(avifile):
     global offset
@@ -160,6 +207,18 @@ def pullstrl(avifile):
                 aud['bits_per_sample'] = bitsPerSample
                 aud['size'] = bsize
                 strf.append(aud)
+                offset = offset + (7*0x04)
+            elif 'txts' == stream_type:
+                (fcc, ssize, one, two, three, four, five) \
+                = struct.unpack_from('4s6I', avifile, offset)
+                txt = dict()
+                txt['structsize'] = ssize
+                txt['one'] = one
+                txt['two'] = two
+                txt['three'] = three
+                txt['four'] = four
+                txt['five'] = five
+                strf.append(txt)
                 offset = offset + (7*0x04)
             else:
                 break
