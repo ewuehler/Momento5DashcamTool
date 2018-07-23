@@ -8,6 +8,8 @@ import time
 import traceback
 import json
 import struct
+import base64
+import binascii
 
 
 #Global variables.  Don't judge me.
@@ -105,7 +107,8 @@ def pullLIST(avifile):
 
 def pullmovi(avifile):
     global offset
-    res = dict()
+    res = list()
+    count = 0
     while True:
         fourcc = struct.unpack_from('4s', avifile, offset)[0]
         if b'02st' == fourcc:
@@ -116,24 +119,52 @@ def pullmovi(avifile):
             gpsstr_fmt = '{}sI'.format(unk2-0x04)
             (gpsstr, unk3) = struct.unpack_from(gpsstr_fmt, avifile, offset)
             offset = offset + unk2
+            st02['fourcc'] = fcc.decode()
             st02['structsize'] = ssize
             st02['unk1'] = unk1
             st02['unk2'] = unk2
             st02['gps'] = gpsstr.decode()
             st02['unk3'] = unk3
-            res['02st'] = st02
+            res.append(st02)
         elif b'03st' == fourcc:
             print('03st')
             st03 = dict()
             (fcc, ssize, unk1, unk2, unk3) = struct.unpack_from('4s4I', avifile, offset)
             offset = offset + (5*0x04)
+            st03['fourcc'] = fcc.decode()
             st03['structsize'] = ssize
             st03['unk1'] = unk1
             st03['unk2'] = unk2
             st03['unk3'] = unk3
-            res['03st'] = st03
-        # elif b'00dc' == fourcc:
-        #     print ('00dc')
+            res.append(st03)
+        elif b'00dc' == fourcc:
+            print ('00dc')
+            dc00 = dict()
+            (fcc, ssize) = struct.unpack_from('4sI', avifile, offset)
+            dc00['fourcc'] = fcc.decode()
+            dc00['structsize'] = ssize
+            offset = offset + 0x08
+            data_fmt = '{}s'.format(ssize)
+            print (data_fmt)
+            b64data = binascii.b2a_base64(struct.unpack_from(data_fmt, avifile, offset)[0])
+            # print(b64data)
+            # dc00['data'] = b64data.decode()
+            offset = offset + ssize
+            res.append(dc00)
+        elif b'01wb' == fourcc:
+            print('01wb')
+            wb01 = dict()
+            (fcc, ssize) = struct.unpack_from('4sI', avifile, offset)
+            wb01['fourcc'] = fcc.decode()
+            wb01['structsize'] = ssize
+            offset = offset + 0x08
+            data_fmt = '{}s'.format(ssize)
+            print (data_fmt)
+            b64data = binascii.b2a_base64(struct.unpack_from(data_fmt, avifile, offset)[0])
+            # print (b64data)
+            # wb01['data'] = b64data.decode()
+            offset = offset+ssize
+            res.append(wb01)
         else:
             break
     return res
