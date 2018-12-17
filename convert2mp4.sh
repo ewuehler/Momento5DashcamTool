@@ -17,6 +17,10 @@ TEMP_REAR="/tmp/temp_rear.mp4"
 FRONT_OUTPUT=$(basename ${FILENAME%.*})_FRONT.mp4
 REAR_OUTPUT=$(basename ${FILENAME%.*})_REAR.mp4
 
+SCALE_X=$()
+SCALE_Y_REAR="250"
+
+
 echo "Input file: ${FILENAME}"
 echo "Front Output File: ${FRONT_OUTPUT}"
 echo "Rear Output File: ${REAR_OUTPUT}"
@@ -25,7 +29,7 @@ echo "---------------------------------------------"
 echo "Create Temporary files for both cameras"
 echo "---------------------------------------------"
 ffmpeg -i ${FILENAME} -map 0:0 ${TEMP_FRONT} \
--filter:v "crop=1920:1000:0:0" -map 0:1 -vf hflip ${TEMP_REAR} 
+-filter:v "crop=1920:1000:0:0, hflip" -map 0:1 ${TEMP_REAR} 
 
 echo "---------------------------------------------"
 echo "Create Front View as Primary"
