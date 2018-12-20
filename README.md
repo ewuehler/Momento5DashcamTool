@@ -1,6 +1,6 @@
 # Momento 5 Dashcam Tool
 
-I have found the Momento 5 Dashcam app - for both Mac or Windows - essentially useless for me...  All I want is to pull some video clips and it takes an *eternity* to launch the app and find the file I want to export.  Since I generally know about the time I want to extract, I wanted a simple command line tool to pull out the bits...  This got me headed down the rabbit hole that is AVI file formats.  So I figured I could build a tool to pull out the contents I want for a time range I want and pull the video bits together without launching any app - AVI is a standard format, right?
+I have found the Momento 5 Dashcam app - for both Mac or Windows - essentially useless for me...  All I want is to pull some video clips and it takes an *eternity* to launch the app and find the file I want to export.  Since I generally know about the time I want to extract, I wanted a simple command line tool to pull out the bits...  This got me headed down the rabbit hole that is the [AVI file format](https://docs.microsoft.com/en-us/previous-versions//ms779636(v=vs.85)).  So I figured I could build a tool to pull out the contents I want for a time range I want and pull the video bits together without launching any app - AVI is a standard format, right?
 
 
 **WORK IN PROGRESS**
