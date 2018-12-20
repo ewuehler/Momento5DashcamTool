@@ -26,7 +26,14 @@ AVI_MAX_RIFF_SIZE       = 0x4000000000000000
 AVI_MASTER_INDEX_SIZE   = 256
 AVIIF_INDEX             = 0x10
 
-M5_AVI_IDX1_OFFSET      = 0x27000000
+# The files are a fixed file size and the movi indexes
+# are all found here.  Parsing the file stream will eventually
+# cause errors as there will be "leftover" data from a previous
+# memory location...
+M5_EVT2_IDX1_OFFSET     = 0x02700000
+M5_IMP2_IDX1_OFFSET     = 0x02700000
+M5_MOT2_IDX1_OFFSET     = 0x02700000
+M5_REC2_IDX1_OFFSET     = 0x04F00000
 
 riff = dict()
 offset = 0x00
@@ -34,30 +41,36 @@ offset = 0x00
 __version__ = '1.0.0'
 
 
-
-
 try:
     from argparse import ArgumentParser as ArgParser
 except ImportError:
     from optparse import OptionParser as ArgParser
-""" 
-Repper file cmd line tool
 
-Simple tool for executing the log_translator against an input file.
-
-"""
 
 def dashcamVideoParser():
     global riff,offset
-    print("Dashcam Video Parser: {}".format(__version__))
-    print("Reading file: {}".format(inputfile))
+    # print("Momento 5 Dashcam Video Parser: {}".format(__version__))
+    # print("Reading file: {}".format(inputfile))
+    filename = os.path.basename(inputfile)
+    if filename.startswith('REC2'):
+        idx1offset = M5_REC2_IDX1_OFFSET
+    elif filename.startswith('MOT2'):
+        idx1offset = M5_MOT2_IDX1_OFFSET  
+    elif filename.startswith('IMP2'):
+        idx1offset = M5_IMP2_IDX1_OFFSET  
+    elif filename.startswith('EVT2'):
+        idx1offset = M5_EVT2_IDX1_OFFSET  
+    else:
+        idx1offset = M5_EVT2_IDX1_OFFSET  
     avifile = open(inputfile, 'rb').read()
     if avifile:
+        # first up, scan the file and get the movi offsets
+        movioffsets = generateMoviOffsets(avifile, idx1offset)
         offset = 0
         (fourcc, fsize, ftype) = struct.unpack_from('4sI4s', avifile)
         riff['riff'] = fourcc.decode()
         riff['filesize'] = fsize
-        riff['filesizehex'] = hex(fsize)
+        riff['filesizehex'] = pad_hex(hex(fsize))
         riff['filetype'] = ftype.decode()
         offset = 0x0C
         while True:
@@ -66,7 +79,7 @@ def dashcamVideoParser():
             offset = offset + 0x04
             # Get LIST
             if b'LIST' == next_type:
-                (list_size, list_type)  = pullLIST(avifile)
+                (list_size, list_type) = pullLIST(avifile)
                 offset = offset+0x08
                 # print ("type ", list_type, "; size ", list_size)
                 if b'hdrl' == list_type:
@@ -87,15 +100,20 @@ def dashcamVideoParser():
                     if not movi:
                         movi = list()
                         riff['movi'] = movi
-                    movi.append(pullmovi(avifile))
+#                    movi.append(movioffsets)
+                    movi.append(pullmovi(avifile, movioffsets,offset))
 
             elif b'JUNK' == next_type:
                 junk_size = struct.unpack_from('I', avifile, offset)[0]
                 offset = offset + 0x04
-                # print("junk: ",junk_size)
+                # TODO: there is something in the JUNK - the fact that it has the file name
+                # implies to me anyway that the data in "JUNK" probably solves some problems
+                # elsewhere in the parsing.  Hooray for proprietary bits!
+                fname = struct.unpack_from('28s',avifile,offset)[0]
+                riff['filename'] = fname.decode().rstrip(' \t\r\n\0')
                 offset = offset + junk_size
             else:
-                print("Not here: {}".format(pad_hex(hex(offset))))
+                # print("Parsing Complete")
                 break
 
         # now go get the idx1 offset and loop through those, making a 
@@ -103,91 +121,81 @@ def dashcamVideoParser():
 
             
         # (name, lsize, ltype) = struct.unpack_from('4sI4s', avi, offset)
-        print("-----")
+        # print("-----")
         print(json.dumps(riff, indent=2))
 
 def pullLIST(avifile):
     global offset
     return struct.unpack_from('I4s', avifile, offset)
 
-def pullmovi(avifile):
-    global offset
+def pullmovi(avifile, movioffsets, initialoffset):
     res = list()
-    count = 0
-    while True:
-        # fourcc = struct.unpack_from('4s', avifile, offset)[0]
-        streamnumber = struct.unpack_from('2s', avifile, offset)[0]
-        streamtype = struct.unpack_from('2s', avifile, offset+2)[0]
-        print("Stream: {}; Type: {}".format(streamnumber,streamtype))
-        if b'st' == streamtype:
-            if b'02' == streamnumber:
-                # print('02st')
-                st02 = dict()                    
-                st02['offset'] = pad_hex(hex(offset))
-                (fcc, ssize, unk1, unk2) = struct.unpack_from('4s3I', avifile, offset)
-                print(fcc, " ", ssize, " ", unk1, " ", unk2)
-                offset = offset + (4*0x04)
-                gpsstr_fmt = '{}sI'.format(unk2-0x04)
-                (gpsstr, unk3) = struct.unpack_from(gpsstr_fmt, avifile, offset)
-                offset = offset + unk2
-                st02['fourcc'] = fcc.decode()
-                st02['structsize'] = ssize
-                st02['unk1'] = unk1
-                st02['unk2'] = unk2
-                st02['gps'] = gpsstr.decode()
-                st02['unk3'] = unk3
-                res.append(st02)
-            elif b'03' == streamnumber:
-                # print('03st')
-                st03 = dict()
-                st03['offset'] = pad_hex(hex(offset))
-                (fcc, ssize, unk1, unk2, unk3) = struct.unpack_from('4s4I', avifile, offset)
-                offset = offset + (5*0x04)
-                st03['fourcc'] = fcc.decode()
-                st03['structsize'] = ssize
-                st03['unk1'] = unk1
-                st03['unk2'] = unk2
-                st03['unk3'] = unk3
-                res.append(st03)
-            else:
-                print("Unknown st")
-        elif b'dc' == streamtype:
-            # print ('00dc')
-            dc = dict()
-            dc['offset'] = pad_hex(hex(offset))
-            (fcc, ssize) = struct.unpack_from('4sI', avifile, offset)
-            dc['fourcc'] = fcc.decode()
-            dc['structsize'] = ssize
-            offset = offset + 0x08
-            data_fmt = '{}s'.format(ssize)
+    knowntypes = ['st', 'dc', 'db', 'wb', 'pc']
+    for (fourcc, flag, moffset, length) in movioffsets:
+        moffset = moffset + initialoffset
+        # streamnumber = struct.unpack_from('2s', avifile, moffset)[0]
+        # streamtype = struct.unpack_from('2s', avifile, moffset+2)[0]
+        streamnumber = fourcc[:2]
+        streamtype = fourcc[2:]
+        # print("Stream: {}; Type: {}; Offset: {}; Offset Hex: {}".format(streamnumber,streamtype, moffset, pad_hex(hex(moffset))))
 
-            filename = "test-{}-{}.mov".format(str(streamnumber), str(streamtype))
-            filebytes = bytearray(struct.unpack_from(data_fmt, avifile, offset)[0])
-            aviout = open(filename, 'wb')
-            aviout.write(filebytes)
-            aviout.close() 
-            # print (data_fmt)
-            #b64data = binascii.b2a_base64(struct.unpack_from(data_fmt, avifile, offset)[0])
-            # print(b64data)
-            # dc['data'] = b64data.decode()
-            offset = offset + ssize
-            res.append(dc)
-        elif b'wb' == streamtype:
-            # print('01wb')
-            wb01 = dict()
-            wb01['offset'] = pad_hex(hex(offset))
-            (fcc, ssize) = struct.unpack_from('4sI', avifile, offset)
-            wb01['fourcc'] = fcc.decode()
-            wb01['structsize'] = ssize
-            offset = offset + 0x08
-            data_fmt = '{}s'.format(ssize)
-            print (data_fmt)
-            b64data = binascii.b2a_base64(struct.unpack_from(data_fmt, avifile, offset)[0])
-            # print (b64data)
-            # wb01['data'] = b64data.decode()
-            offset = offset+ssize
-            res.append(wb01)
+        if streamtype in knowntypes:
+            sd = dict()
+            sd['fourcc'] = fourcc
+            sd['offset'] = moffset
+            sd['offsethex'] = pad_hex(hex(moffset))
+            ssize = struct.unpack_from('I', avifile, moffset)[0]
+            # sd['structsize'] = ssize
+            moffset = moffset + 0x04
+            sdd = dict()
+            sdd['offset'] = moffset
+            sdd['offsethex'] = pad_hex(hex(moffset))
+            sdd['datasize'] = ssize
+            
+            # TODO: Figure out how/why I would want to pull the data from the streams
+            # and put it together...  For now just dump the stream data.
+            if 'st' == streamtype:  ## Non-standard stream type
+                if '03' == streamnumber:
+                    (flags, size) = struct.unpack_from('2I', avifile,moffset)
+                    unpackbits = '{}s'.format(size)
+                    content = struct.unpack_from(unpackbits, avifile, moffset+0x08)[0]
+                    sdd['flags'] = flags
+                    sdd['size'] = size
+                    sdd['gps'] = content.decode().rstrip(' \t\r\n\0')
+                elif '04' == streamnumber:
+                    sdd['todo'] = '<{} bytes of data>'.format(ssize)
+                else:
+                    sdd['todo'] = '<{} bytes of data from unknown stream number>'.format(ssize)
+            elif 'dc' == streamtype:  ## Compressed Video Frame
+                sdd['todo'] = '<{} bytes of data>'.format(ssize)
+                # data_fmt = '{}s'.format(ssize)
+                #b64data = binascii.b2a_base64(struct.unpack_from(data_fmt, avifile, offset)[0])
+                # dc['data'] = b64data.decode()
+                pass
+            elif 'db' == streamtype: ## Uncompressed Video Frame
+                sdd['todo'] = '<{} bytes of data>'.format(ssize)
+                # data_fmt = '{}s'.format(ssize)
+                #b64data = binascii.b2a_base64(struct.unpack_from(data_fmt, avifile, offset)[0])
+                # dc['data'] = b64data.decode()
+                pass
+            elif 'wb' == streamtype: ## Audio data
+                sdd['todo'] = '<{} bytes of data>'.format(ssize)
+                # data_fmt = '{}s'.format(ssize)
+                # print (data_fmt)
+                # b64data = binascii.b2a_base64(struct.unpack_from(data_fmt, avifile, offset)[0])
+                # print (b64data)
+                pass 
+            elif 'pc' == streamtype:  ## Palette change
+                sdd['todo'] = '<{} bytes of data>'.format(ssize)
+                pass
+            #moffset = moffset + ssize
+            sd['data'] = sdd
+            res.append(sd)
         else:
+            print("Unknown Stream: {}; Type: {}; Offset: {}; Offset Hex: {}".format(streamnumber,streamtype, moffset, pad_hex(hex(moffset))))
+            # Need to figure out how to calculate the last blob of data in these streams as 
+            # the type is not correct...
+            #sys.exit()
             break
     return res
 
@@ -317,6 +325,27 @@ def aviheader(avifile):
     avih['reserved2'] = reserved2
     avih['reserved3'] = reserved3
     return avih
+
+# Since it appears the individual AVI files are not created from clean
+# memory (previous files in memory leave bogus data in current files),
+# it appears we need to use the idx1 list so we don't get lost in bad
+# data...
+def generateMoviOffsets(avifile, idx1offset):
+    idx1 = list()
+    # print("offset: {} ({})".format(idx1offset, pad_hex(hex(idx1offset))))
+    (fourcc, ssize) = struct.unpack_from('4sI', avifile, idx1offset)
+    if (fourcc.decode() == 'idx1'):
+        # print("Index Offset: {}; Size: {}".format(fourcc.decode(), int(ssize)))
+        idxoff = idx1offset + 0x08
+        while True:
+            (fcc, flags, moffset, msize) = struct.unpack_from('4s3I', avifile,idxoff)
+            # print("chunk: {}; flags: {}; offset: {}; size: {}".format(fcc.decode(), flags, moffset, msize))
+            idx1.append([fcc.decode(),int(flags),int(moffset),int(msize)])
+            idxoff = idxoff + 0x10
+            if idxoff >= idx1offset+0x08+ssize:
+                break
+    return idx1
+
 
 
 def pad_hex(hexstr, fillsz=8):
